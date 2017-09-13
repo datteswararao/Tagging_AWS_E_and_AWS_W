@@ -115,8 +115,8 @@ def lambda_handler(event, context):
     #message = "\n DMS total non-prod instances:" + str(i) + "\n springxd not tagged:" + str(a)  + "\n dms2-cost-opt-excl:" + str(c) + "\n already tagged:" + str(b) + "\n instances Tagged this run:" + str(f)
     message = "\n DMS EAST total non-prod instances:" + str(i) + "\n dms2-cost-opt-excl:" + str(c) + "\n already tagged:" + str(b) + "\n instances Tagged this run:" + str(f)
     print(message)
-    response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXXXX", Message=message ) 
-    #response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXXX", Message=message )
+    response = client.publish( TargetArn="arn:aws:sns:us-east-1:111111:XXXXXXX", Message=message ) 
+    #response = client.publish( TargetArn="arn:aws:sns:us-east-1:111111:XXXXXX", Message=message )
  
 
 # ASG Tagging
@@ -220,5 +220,5 @@ def lambda_handler(event, context):
     
     message = "\n DMS EAST total non-prod ASG's:" + str(total_asg) + "\n dms2-cost-opt-excl: ASG:" + str(a) + "\n Downtime tagged ASG:" + str(b) + "\n instances Tagged this run:" + str(i)
     print(message)
-    response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXXX", Message=message )
-    #response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXX", Message=message )
+    response = client.publish( TargetArn="arn:aws:sns:us-east-1:1111111:XXXXXX", Message=message )
+    #response = client.publish( TargetArn="arn:aws:sns:us-east-1:11111:XXXXX", Message=message )
