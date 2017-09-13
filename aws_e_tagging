@@ -1,0 +1,224 @@
+##############################################################################################
+# Program               : DMS-Gumbo-AWS-Cost_Optimization_tagging.py
+# Description           : Finds non SpringXD/ Non Mongo and dms2-cost-opt-excl boxes and puts the tags to shutdown instaces on non
+#                         business hours and weekends
+#
+# Modification history:
+#
+# Date          Author                          Description
+# ===========  =========================        ====================================
+# 05/26/16      Dattu Marneni                 Created
+# 06/29/16      Dattu Marneni                   Changed for Spring-XD and MongoDB as they no more excluded.
+# 08/09/16      Dattu Marneni               Added ASG tagging script
+##############################################################################################
+
+import boto3
+import logging
+
+#setup simple logging for INFO
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+#define the connection
+ec2 = boto3.resource('ec2', region_name='us-east-1')
+
+client = boto3.client('sns', region_name='us-east-1')
+
+client_asg = boto3.client('autoscaling', region_name='us-east-1') 
+
+#('autoscaling',region_name='us-east-1')
+
+def lambda_handler(event, context):
+    # Use the filter() method of the instances collection to retrieve
+    # all running EC2 instances.
+    i = 0
+    a = 0
+    b = 0
+    c = 0
+    d = 0
+    e = 0
+    f = 0
+    filters = [
+        { 'Name': 'tag:ASV', 'Values': ['ASVXXXXX']}
+#        { 'Name': 'tag:Name', 'Values': ['XXXXXXX']}
+    ]
+
+    #filter the instances
+    instances = ec2.instances.filter(Filters=filters)
+
+    #locate all running instances
+    RunningInstances = [instance.id for instance in instances]
+    
+    #filter_springxd = "springxd"
+    #filter_mongodb = "amdb"
+    filter_exclude_tag = "dms2-cost-opt-excl"
+    filter_downtime = "downtime"
+    filter_maid_downtime = "maid_downtime"
+    
+    
+    for instance in instances:
+        i +=1
+        tag_this_instace = 0
+        #print(instance.id, instance.instance_type)
+        #print(instance.tags)
+        #  -i-0ba09096 (exclude tag) - 3
+        # i-1b6d7086 (mongoDB) - 2
+        # i-01a89986 (spring xd) - 1
+        # i-00686587 (ngnix) - 4 and 5 for maid_downtime or downtime
+        #if instance.id == "i-00686587":
+        for tag in instance.tags:
+            #print(tag['Key'], tag['Value'])
+            #if ( (tag['Key'] == "Name") and ( filter_springxd in tag['Value']) ):
+            #    tag_this_instace = 1
+            #    a +=1
+            #if ( (tag['Key'] == "Name") and ( filter_mongodb in tag['Value']) ):
+            #    tag_this_instace = 2
+            #    b +=1
+            if ( (filter_exclude_tag == tag['Key'] ) and ( tag['Value'] in ['true','True','TRUE'] ) ):
+                tag_this_instace = 3
+                c +=1
+            if ( (filter_downtime == tag['Key'] ) and ( tag['Value'] == "weekend") ):
+                tag_this_instace = 4
+                d +=1
+            if ( (filter_maid_downtime == tag['Key'] ) and ( tag['Value'] == "Offhours tz=ET") ):
+                tag_this_instace = 5
+                e +=1
+        tempTags=[]
+        if tag_this_instace == 0:
+            f +=1
+            print(tag_this_instace)
+            print(instance.id, instance.instance_type)
+            tempTags = [{
+                'Key': 'downtime',
+                'Value': 'weekend'
+            },{
+                'Key': 'maid_downtime',
+                'Value': 'Offhours tz=ET'
+            }]
+            instance.create_tags(Tags=tempTags)
+#        else:
+#            print(tag_this_instace)
+
+    
+    
+    print("no of instances:" + str(i))  
+    print("no of instances : springxd :" + str(a))
+    print("no of instances : mongoDB  :" + str(b))
+    print("no of instances dms2-cost-opt-excl Tagged:" + str(c))
+    print("no of instances downtime Tagged:" + str(d))
+    print("no of instances maid_downtime Tagged:" + str(e))
+    print("no of instances Tagged in this run:" + str(f))
+    
+    #a = i - b - c - d - f
+    b = i - c - f
+    
+    #message = "\n DMS total non-prod instances:" + str(i) + "\n springxd not tagged:" + str(a)  + "\n dms2-cost-opt-excl:" + str(c) + "\n already tagged:" + str(b) + "\n instances Tagged this run:" + str(f)
+    message = "\n DMS EAST total non-prod instances:" + str(i) + "\n dms2-cost-opt-excl:" + str(c) + "\n already tagged:" + str(b) + "\n instances Tagged this run:" + str(f)
+    print(message)
+    response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXXXX", Message=message ) 
+    #response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXXX", Message=message )
+ 
+
+# ASG Tagging
+
+
+    filters_excl_asg = [
+        { 'Name': 'key', 'Values': ['dms2-cost-opt-excl']}, { 'Name': 'value', 'Values': ['true','True','TRUE']},
+    ]
+    
+    filters_asg_already_tag_downtime = [
+        { 'Name': 'key', 'Values': ['downtime']}, { 'Name': 'value', 'Values': ['weekend']},
+    ]
+    
+    filters_asg_already_tag_maid = [
+        { 'Name': 'key', 'Values': ['maid_downtime']}, { 'Name': 'value', 'Values': ['Offhours tz=ET']},
+    ]
+    
+    filters_asg = [
+        { 'Name': 'key', 'Values': ['ASV']}, { 'Name': 'value', 'Values': ['ASVXXXXXX']},
+    ]
+    
+    a=0
+    response_tag_des_excl_ResourceId = []
+    response_tag_des_excl_ResourceType = []
+    
+    response_tag_excl_des = client_asg.describe_tags(Filters=filters_excl_asg,MaxRecords=100)
+    
+    for excl_j in response_tag_excl_des['Tags']:
+        response_tag_des_excl_ResourceId.append(excl_j['ResourceId'])
+        response_tag_des_excl_ResourceType.append(excl_j['ResourceType'])
+    
+    b=0
+    response_tag_asg_already_downtime_ResourceId = []
+    response_tag_asg_already_downtime_ResourceType = []
+    
+    response_tag_asg_downtime_already = client_asg.describe_tags(Filters=filters_asg_already_tag_downtime,MaxRecords=100)
+    
+    for excl_j in response_tag_asg_downtime_already['Tags']:
+        response_tag_asg_already_downtime_ResourceId.append(excl_j['ResourceId'])
+        response_tag_asg_already_downtime_ResourceType.append(excl_j['ResourceType'])
+    
+    
+    c=0
+    response_tag_asg_already_maid_ResourceId = []
+    response_tag_asg_already_maid_ResourceType = []
+    
+    response_tag_asg_maid_already = client_asg.describe_tags(Filters=filters_asg_already_tag_maid,MaxRecords=100)
+    
+    for excl_j in response_tag_asg_maid_already['Tags']:
+        response_tag_asg_already_maid_ResourceId.append(excl_j['ResourceId'])
+        response_tag_asg_already_maid_ResourceType.append(excl_j['ResourceType'])
+    
+    
+    
+    response_tag_des = client_asg.describe_tags(Filters=filters_asg,MaxRecords=100)
+    
+    i=0
+    for j in response_tag_des['Tags']:
+            response_tag_des_ResourceId = j['ResourceId']
+            response_tag_des_ResourceType = j['ResourceType']
+            if (response_tag_des_ResourceId in response_tag_des_excl_ResourceId and response_tag_des_ResourceType in response_tag_des_excl_ResourceType):
+                a +=1
+            elif ( (response_tag_des_ResourceId in response_tag_asg_already_downtime_ResourceId and response_tag_des_ResourceType in response_tag_asg_already_downtime_ResourceType) and
+            (response_tag_des_ResourceId in response_tag_asg_already_maid_ResourceId and response_tag_des_ResourceType in response_tag_asg_already_maid_ResourceType)):
+                b +=1
+            else:
+                i +=1
+                print(j['Key'])
+                print( j['Value'] )
+                print(j['ResourceId'])
+                print(j['ResourceType'])
+                response_tag_create = client_asg.create_or_update_tags(
+                    Tags=[
+                        {
+                            'ResourceId': response_tag_des_ResourceId,
+                            'ResourceType': response_tag_des_ResourceType,
+                            'Key': 'maid_downtime',
+                            'Value': 'Offhours tz=ET',
+                            'PropagateAtLaunch': True
+                        },
+                        {
+                            'ResourceId': response_tag_des_ResourceId,
+                            'ResourceType': response_tag_des_ResourceType,
+                            'Key': 'downtime',
+                            'Value': 'weekend',
+                            'PropagateAtLaunch': True
+                        },
+                    ]
+                )
+    
+    # Print the logs
+    total_asg= i+a+b
+    print("Total ASG's today:")
+    print(i+a+b)
+    print("Tagged today:")
+    print(i)
+    print("EXCL tagged")
+    print(a)
+    print("Downtime tagged:")
+    print(b)
+    
+    message = "\n DMS EAST total non-prod ASG's:" + str(total_asg) + "\n dms2-cost-opt-excl: ASG:" + str(a) + "\n Downtime tagged ASG:" + str(b) + "\n instances Tagged this run:" + str(i)
+    print(message)
+    response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXXX", Message=message )
+    #response = client.publish( TargetArn="arn:aws:sns:us-east-1:625275122486:XXXXX", Message=message )
